@@ -1,0 +1,58 @@
+# Deployment for a host that already runs Traefik with the docker provider.
+# Run from the repo root:
+#
+#   docker compose -f deploy/docker-compose.traefik.yml up -d --build
+#
+# Traefik is attached to the external `traefik_network`; the router rule is
+# explicit and prioritised over this box's catch-all HostRegexp, which would
+# otherwise send the name to YunoHost through the frp tunnel.
+
+services:
+  bridge:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: twtxt-bridge
+    restart: unless-stopped
+    environment:
+      BASE_URL: ${BASE_URL:-https://twtxt.doesnmlab.xyz}
+      BRIDGE_ACTOR: ${BRIDGE_ACTOR:-bridge}
+      PORT: "8000"
+      DATA_DIR: /data
+      MAX_CONCURRENT: "3"
+      MAX_CACHE_ENTRIES: "300"
+      RATE_PER_MIN: "20"
+    volumes:
+      - bridge-data:/data
+    networks:
+      - traefik_network
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_network"
+      - "traefik.http.routers.twtxt.rule=Host(`twtxt.doesnmlab.xyz`)"
+      - "traefik.http.routers.twtxt.priority=100"
+      - "traefik.http.routers.twtxt.entrypoints=web"
+      - "traefik.http.routers.twtxt.middlewares=twtxt-https"
+      - "traefik.http.routers.twtxt-secure.rule=Host(`twtxt.doesnmlab.xyz`)"
+      - "traefik.http.routers.twtxt-secure.priority=100"
+      - "traefik.http.routers.twtxt-secure.entrypoints=websecure"
+      - "traefik.http.routers.twtxt-secure.tls=true"
+      - "traefik.http.routers.twtxt-secure.tls.certresolver=myresolver"
+      - "traefik.http.routers.twtxt-secure.service=twtxt"
+      - "traefik.http.services.twtxt.loadbalancer.server.port=8000"
+      - "traefik.http.middlewares.twtxt-https.redirectscheme.scheme=https"
+
+volumes:
+  bridge-data:
+
+networks:
+  traefik_network:
+    external: true

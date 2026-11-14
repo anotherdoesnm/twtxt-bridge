@@ -1,0 +1,42 @@
+# No-Docker deployment. Install Node 22 and Caddy, then:
+#
+#   useradd --system --home /var/lib/twtxt-bridge --shell /usr/sbin/nologin twtxt-bridge
+#   install -d -o twtxt-bridge -g twtxt-bridge /opt/twtxt-bridge /var/lib/twtxt-bridge
+#   rsync -a --exclude node_modules --exclude data ./ /opt/twtxt-bridge/
+#   cd /opt/twtxt-bridge && npm ci --omit=dev
+#   cp deploy/twtxt-bridge.service /etc/systemd/system/
+#   systemctl enable --now twtxt-bridge
+
+[Unit]
+Description=twtxt ActivityPub bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=twtxt-bridge
+Group=twtxt-bridge
+WorkingDirectory=/opt/twtxt-bridge
+
+Environment=NODE_ENV=production
+Environment=PORT=8000
+Environment=DATA_DIR=/var/lib/twtxt-bridge
+Environment=MAX_CONCURRENT=4
+Environment=MAX_CACHE_ENTRIES=300
+Environment=RATE_PER_MIN=20
+Environment=BASE_URL=https://bridge.example.org
+
+ExecStart=/usr/bin/node --experimental-strip-types src/server.ts
+Restart=always
+RestartSec=5
+
+# A rough ceiling: the process idles around 130 MB.
+MemoryMax=256M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/twtxt-bridge
+
+[Install]
+WantedBy=multi-user.target

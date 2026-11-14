@@ -1,0 +1,17 @@
+# Caddy gets and renews the certificate for you; nothing else is needed.
+# Point the DNS A/AAAA record at the VPS first.
+
+bridge.example.org {
+	encode zstd gzip
+
+	# Caddy sets X-Forwarded-For itself, which the bridge uses for rate limits.
+	reverse_proxy 127.0.0.1:8000 {
+		# twtxt clients poll; keep the connection cheap.
+		flush_interval -1
+	}
+
+	header {
+		# The feed endpoint sets its own CORS header; don't duplicate it here.
+		-Server
+	}
+}

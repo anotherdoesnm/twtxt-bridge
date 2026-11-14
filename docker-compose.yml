@@ -1,0 +1,24 @@
+services:
+  bridge:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Must be the public HTTPS origin; the actor and every feed URL are
+      # derived from it, and twtxt hashes depend on the feed URL.
+      BASE_URL: ${BASE_URL:?set BASE_URL, e.g. https://bridge.example.org}
+      PORT: "8000"
+      # Keep the footprint predictable on a small VPS.
+      MAX_CONCURRENT: "4"
+      MAX_CACHE_ENTRIES: "300"
+      RATE_PER_MIN: "20"
+    # Only the reverse proxy on the host should reach it.
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - bridge-data:/data
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  bridge-data:
