@@ -74,7 +74,7 @@ docker exec twtxt-bridge cat /data/state.json   # .token
 | --- | --- | --- |
 | `GET /twtxt.txt` | no | the feed |
 | `GET /api/info` | no | nick, url, avatar, description, links, follower count |
-| `GET /api/followers` | yes | who follows the actor |
+| `GET /api/followers` | yes | who follows: fediverse followers and twtxt readers |
 | `POST /api/post` | yes | append a twt and fan out `Create{Note}` |
 | `POST /api/profile` | yes | avatar url, description, links |
 | `GET /mentions.txt` | no | replies to bridge posts, as a twtxt feed |
@@ -86,6 +86,14 @@ response: a failing inbox must not make the client think the post was lost.
 
 Incoming `Follow` is accepted with a signed `Accept` and the follower's inbox is
 stored; `Undo{Follow}` removes it.
+
+Txtxt clients don't follow — they just fetch — so they are discovered from the
+`User-Agent` ([Multi-User User-Agent extension](https://twtxt.dev/exts/multiuser-user-agent.html)):
+`twtxt-app/0.1 (+https://…; @nick)` becomes a reader, and the `~who-follows`
+form is recorded as a group entry (the resource itself is not expanded yet).
+Both kinds come back from `/api/followers` with `via=activitypub` or
+`via=user-agent`. Recording is throttled to one write per reader per five
+minutes.
 
 ## Replies and webmentions
 
