@@ -1,8 +1,10 @@
 import { createFederation, MemoryKvStore } from "@fedify/fedify";
-import { Accept, Follow, Person, Undo } from "@fedify/vocab";
+import { Accept, Create, Follow, Note, Person, Undo } from "@fedify/vocab";
 import { BASE_URL, BRIDGE_ACTOR } from "./config.ts";
 import { getKeyPair } from "./keys.ts";
-import { addFollower, removeFollower } from "./state.ts";
+import { addFollower, addMention, removeFollower } from "./state.ts";
+import { BASE_URL as BASE } from "./config.ts";
+import { htmlToTwtxt, rfc3339 } from "./twtxt.ts";
 
 /**
  * The bridge is a single-actor service. We don't federate content of our own —
@@ -68,6 +70,36 @@ federation
         object: follow,
       }),
     );
+  })
+  .on(Create, async (_ctx, create) => {
+    const object = await create.getObject();
+    if (!(object instanceof Note)) return;
+
+    let parent: URL | null = null;
+    for await (const target of object.getReplyTargets()) {
+      parent = target.id ?? null;
+      break;
+    }
+    const prefix = `${BASE}/notes/`;
+    if (!parent || !parent.href.startsWith(prefix)) return;
+
+    const actor = await create.getActor();
+    const actorId = create.actorId;
+    const nick =
+      (actor?.preferredUsername as unknown as string) ??
+      (actorId ? new URL(actorId.href).host : "someone");
+
+    const text = htmlToTwtxt(String(object.content ?? ""));
+    if (!text) return;
+
+    await addMention({
+      created: rfc3339(new Date()),
+      author: actorId?.href ?? "",
+      nick: nick || "someone",
+      text,
+      parentHash: parent.href.slice(prefix.length),
+      source: "ap",
+    });
   })
   .on(Undo, async (_ctx, undo) => {
     const object = await undo.getObject();

@@ -8,6 +8,7 @@ import { cacheGet, cacheList, cacheSet, type CacheEntry } from "./cache.ts";
 import { acquire, checkRate, clientIp, release } from "./limits.ts";
 import { buildFeed } from "./feed.ts";
 import { publish } from "./publish.ts";
+import { receiveWebmention } from "./webmention.ts";
 import { addPost, getState, update } from "./state.ts";
 import { federation } from "./federation.ts";
 import { parseHandle } from "./webfinger.ts";
@@ -246,6 +247,7 @@ async function ownFeed(): Promise<string> {
   const lines = [`# nick = ${oneLine(state.nick)}`, `# url = ${BASE_URL}/twtxt.txt`];
   if (state.avatar) lines.push(`# avatar = ${oneLine(state.avatar)}`);
   if (state.description) lines.push(`# description = ${oneLine(state.description)}`);
+  lines.push(`# webmention = ${BASE_URL}/webmention`);
   for (const link of state.links) if (link) lines.push(`# link = ${oneLine(link)}`);
   lines.push("#");
   for (const post of state.posts) lines.push(`${post.created}\t${post.text}`);
@@ -403,6 +405,48 @@ app.get("/actor/:identifier/following", (c) =>
     { "content-type": "application/activity+json" },
   ),
 );
+
+app.get("/mentions.txt", async (c) => {
+  const state = await getState();
+  const lines = [
+    `# nick = ${oneLine(state.nick)} (replies)`,
+    `# url = ${BASE_URL}/mentions.txt`,
+    `# description = Replies to ${state.nick}, from ActivityPub and webmentions`,
+    "#",
+  ];
+  for (const mention of state.mentions.slice(-200)) {
+    lines.push(`${mention.created}\t(#${mention.parentHash}) @<${oneLine(mention.nick)} url="${oneLine(mention.author)}"> ${mention.text}`);
+  }
+  return c.text(`${lines.join("\n")}\n`, 200, {
+    "content-type": "text/plain; charset=utf-8",
+    "access-control-allow-origin": "*",
+    "cache-control": "public, max-age=30",
+  });
+});
+
+app.post("/webmention", async (c) => {
+  const contentType = c.req.header("content-type") ?? "";
+  let source = "";
+  let target = "";
+
+  if (contentType.includes("application/json")) {
+    const body = (await c.req.json().catch(() => null)) as
+      | { source?: string; target?: string }
+      | null;
+    source = body?.source ?? "";
+    target = body?.target ?? "";
+  } else {
+    const body = (await c.req.parseBody().catch(() => ({}))) as Record<string, unknown>;
+    source = typeof body.source === "string" ? body.source : "";
+    target = typeof body.target === "string" ? body.target : "";
+  }
+
+  if (!source || !target) return c.text("source and target are required\n", 400);
+
+  const rejected = await receiveWebmention(source, target);
+  if (rejected) return c.text(`${rejected}\n`, 400);
+  return c.text("accepted\n", 200);
+});
 
 app.get("/healthz", (c) => c.text("ok\n"));
 

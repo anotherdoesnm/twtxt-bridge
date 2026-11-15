@@ -15,6 +15,19 @@ export interface Follower {
   since: string;
 }
 
+export interface Mention {
+  /** when the reply was published */
+  created: string;
+  /** fediverse actor id, or the source feed url for a webmention */
+  author: string;
+  /** display nick */
+  nick: string;
+  text: string;
+  /** twt hash of our post this replies to */
+  parentHash: string;
+  source: "ap" | "webmention";
+}
+
 export interface State {
   token: string;
   nick: string;
@@ -23,6 +36,7 @@ export interface State {
   links: string[];
   posts: Post[];
   followers: Follower[];
+  mentions: Mention[];
 }
 
 const FILE = join(DATA_DIR, "state.json");
@@ -38,6 +52,7 @@ async function load(): Promise<State> {
     state.posts ??= [];
     state.followers ??= [];
     state.links ??= [];
+    state.mentions ??= [];
     return state;
   } catch {
     // first run
@@ -51,6 +66,7 @@ async function load(): Promise<State> {
     links: [],
     posts: [],
     followers: [],
+    mentions: [],
   };
   await persist();
   console.log(`created ${FILE}; API token: ${state.token}`);
@@ -85,6 +101,17 @@ export async function addPost(text: string, created: string): Promise<Post> {
     s.posts.push(post);
     if (s.posts.length > 5000) s.posts.splice(0, s.posts.length - 5000);
     return post;
+  });
+}
+
+export async function addMention(mention: Mention): Promise<void> {
+  await update((s) => {
+    const duplicate = s.mentions.some(
+      (m) => m.author === mention.author && m.created === mention.created && m.parentHash === mention.parentHash,
+    );
+    if (duplicate) return;
+    s.mentions.push(mention);
+    if (s.mentions.length > 2000) s.mentions.splice(0, s.mentions.length - 2000);
   });
 }
 

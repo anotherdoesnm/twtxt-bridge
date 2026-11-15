@@ -150,3 +150,32 @@ export function rfc3339(when: Date): string {
 export function formatTwt(line: TwtLine): string {
   return `${rfc3339(line.timestamp)}\t${line.content}`;
 }
+
+export interface ParsedFeed {
+  meta: Record<string, string[]>;
+  posts: Array<{ created: string; text: string }>;
+}
+
+/** Minimal reader for a twtxt file: metadata preamble plus `<ts>\t<text>` lines. */
+export function parseTwtxt(body: string): ParsedFeed {
+  const meta: Record<string, string[]> = {};
+  const posts: Array<{ created: string; text: string }> = [];
+
+  for (const line of body.split("\n")) {
+    if (!line.trim()) continue;
+    if (line.startsWith("#")) {
+      const match = /^#\s*([a-zA-Z0-9_-]+)\s*=\s*(.*)$/.exec(line);
+      if (match) {
+        (meta[match[1]!.toLowerCase()] ??= []).push(match[2]!.trim());
+      }
+      continue;
+    }
+    const tab = line.indexOf("\t");
+    if (tab <= 0) continue;
+    const created = line.slice(0, tab).trim();
+    if (!/^\d{4}-\d{2}-\d{2}T/.test(created)) continue;
+    posts.push({ created, text: line.slice(tab + 1) });
+  }
+
+  return { meta, posts };
+}

@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { Create, Note } from "@fedify/vocab";
 import { BASE_URL, BRIDGE_ACTOR } from "./config.ts";
 import { federation } from "./federation.ts";
 import { getState } from "./state.ts";
+import { twtHash } from "./hash.ts";
 
 const AS_PUBLIC = "https://www.w3.org/ns/activitystreams#Public";
 
@@ -29,7 +29,10 @@ export async function publish(text: string, created: string): Promise<number> {
   // Built by hand: the followers collection is a plain route, not a Fedify
   // dispatcher, so ctx.getFollowersUri() would throw.
   const followersUri = new URL(`${BASE_URL}/actor/${BRIDGE_ACTOR}/followers`);
-  const id = new URL(`${BASE_URL}/notes/${randomUUID()}`);
+  // The note id is the twt hash, so an inbound inReplyTo points straight back
+  // at the post it answers without a lookup table.
+  const hash = twtHash(`${BASE_URL}/twtxt.txt`, created, text);
+  const id = new URL(`${BASE_URL}/notes/${hash}`);
 
   const note = new Note({
     id,
