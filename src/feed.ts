@@ -1,7 +1,8 @@
-import { BASE_URL, BRIDGE_ACTOR, MAX_ITEMS } from "./config.ts";
+import { BASE_URL, BRIDGE_ACTOR, MAX_ITEMS, MAX_THREAD_FETCHES, THREAD_BUDGET_MS } from "./config.ts";
 import { federation } from "./federation.ts";
 import { clip, htmlToTwtxt, noteToTwt, formatTwt, type TwtLine } from "./twtxt.ts";
 import { lookupActorUrl, type Handle } from "./webfinger.ts";
+import { subjectFor, type Budget } from "./threads.ts";
 
 type Json = Record<string, any>;
 type Loader = (url: string, options?: { signal?: AbortSignal }) => Promise<{ document: any }>;
@@ -139,7 +140,7 @@ export async function buildFeed(handle: Handle, feedUrl: string): Promise<BuiltF
 
   const raw = await collectItems(loader, outboxUrl, MAX_ITEMS);
 
-  const lines: TwtLine[] = [];
+  const notes: Json[] = [];
   let skipped = 0;
 
   for (const item of raw) {
@@ -167,9 +168,32 @@ export async function buildFeed(handle: Handle, feedUrl: string): Promise<BuiltF
       continue;
     }
 
-    const twt = noteToTwt(note);
-    if (twt) lines.push(twt);
-    else skipped += 1;
+    notes.push(note);
+  }
+
+  // Replies get a `(#hash)` subject pointing at the root of the thread. The
+  // walk costs extra fetches, so it runs in parallel and under a deadline.
+  const budget: Budget = {
+    left: MAX_THREAD_FETCHES,
+    until: Date.now() + THREAD_BUDGET_MS,
+  };
+  // Sequential on purpose: bursting twenty requests at one instance gets us
+  // rate-limited, which costs more than the serial latency saves.
+  const subjects: Array<string | null> = [];
+  for (const note of notes) {
+    subjects.push(await subjectFor(loader, note, budget).catch(() => null));
+  }
+
+  const lines: TwtLine[] = [];
+  for (let i = 0; i < notes.length; i += 1) {
+    const twt = noteToTwt(notes[i]!);
+    if (!twt) {
+      skipped += 1;
+      continue;
+    }
+    const subject = subjects[i];
+    if (subject) twt.content = `${subject} ${twt.content}`;
+    lines.push(twt);
   }
 
   lines.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());

@@ -142,7 +142,11 @@ export function clip(text: string, max: number): string {
   return `${(at > max * 0.6 ? cut.slice(0, at) : cut).trimEnd()}\u2026`;
 }
 
+/** RFC 3339, seconds precision, UTC — the exact form the feed line uses. */
+export function rfc3339(when: Date): string {
+  return when.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
 export function formatTwt(line: TwtLine): string {
-  const iso = line.timestamp.toISOString().replace(/\.\d{3}Z$/, "Z");
-  return `${iso}\t${line.content}`;
+  return `${rfc3339(line.timestamp)}\t${line.content}`;
 }

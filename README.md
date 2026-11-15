@@ -92,6 +92,8 @@ Environment:
 | `BRIDGE_ACTOR` | `bridge` | actor identifier |
 | `CACHE_TTL_MS` | `300000` | feed cache lifetime |
 | `MAX_ITEMS` | `40` | posts per feed |
+| `THREAD_FETCHES` | `24` | extra fetches per build for thread roots |
+| `THREAD_BUDGET_MS` | `7000` | wall-clock ceiling for thread resolution |
 | `DATA_DIR` | `./data` | key + cache |
 
 ## Deploying behind Traefik
@@ -129,8 +131,17 @@ the whole 2 GB VPS stayed at ~450 MB available while building feeds.
   reads up to three pages (60) and keeps the newest `MAX_ITEMS`. There is no
   full history and no backfill.
 - **Boosts are skipped** (they need a second fetch per item).
-- **No threading and no replies back.** `inReplyTo` is not mapped to the twtxt
-  subject/hash extension yet; the fediverse cannot answer a twtxt reader.
+- **Threading is one level of fidelity.** A reply gets a `(#hash)` subject
+  pointing at the *root* of its conversation (Twt Hash v1: blake2b-256 over
+  `feed url \n timestamp \n text`, base32, last 7 chars), which is what lets a
+  client group a thread. The walk up `inReplyTo` is bounded to 4 hops, 24
+  fetches and 7 s per feed build; if it can't reach a true root it emits **no**
+  subject rather than a mid-thread hash, because a mid-thread twt renders with
+  its own subject prefix and would hash differently. The fediverse still cannot
+  answer a twtxt reader — there is no write path.
+- **Thread cost.** Resolving roots costs a few fetches per reply, so a cold
+  build of a chatty feed takes ~5 s; the 5-minute feed cache and a 6-hour hash
+  cache bring warm builds to ~2 s.
 - **No write path.** Posting from twtxt.app would need a second, claimed
   identity — the part that killed both previous attempts.
 - The bridge is an unauthenticated URL fetcher by design: hosts are normalised
@@ -140,8 +151,7 @@ the whole 2 GB VPS stayed at ~450 MB available while building feeds.
 
 ## Next
 
-1. Map `inReplyTo` to the twtxt subject extension so conversations render.
-2. Add a `# follow =` list and a per-actor "timeline" feed for the bridge
+1. Add a `# follow =` list and a per-actor "timeline" feed for the bridge
    actor's own following collection.
 3. Rate limit + allowlist before this is exposed to the open internet.
 
