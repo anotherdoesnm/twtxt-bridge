@@ -57,6 +57,34 @@ the handler as a plain segment.
 `</p>` become U+2028, entities are decoded, real newlines are collapsed, and
 mentions become the twtxt extension form `@<user@host url="...">`.
 
+## Publishing
+
+The bridge also hosts one twtxt feed of its own and federates it as
+`@bridge@twtxt.doesnmlab.xyz`. It speaks the [twtd API](https://git.mills.io/yarnsocial/twtd/src/branch/main/API.md),
+so [twtxt.app](https://twtxt.app) can use it as a publishing backend
+(Settings → connect a `twtd` server).
+
+The API token is generated on first boot and printed to the container log:
+
+```sh
+docker exec twtxt-bridge cat /data/state.json   # .token
+```
+
+| Path | Auth | What |
+| --- | --- | --- |
+| `GET /twtxt.txt` | no | the feed |
+| `GET /api/info` | no | nick, url, avatar, description, links, follower count |
+| `GET /api/followers` | yes | who follows the actor |
+| `POST /api/post` | yes | append a twt and fan out `Create{Note}` |
+| `POST /api/profile` | yes | avatar url, description, links |
+
+`POST /api/post` takes `{"text": "..."}`, stamps the time server-side, encodes
+newlines as U+2028 and returns `{"created": "..."}`. Delivery happens after the
+response: a failing inbox must not make the client think the post was lost.
+
+Incoming `Follow` is accepted with a signed `Accept` and the follower's inbox is
+stored; `Undo{Follow}` removes it.
+
 ## Endpoints
 
 Live instance: **https://twtxt.doesnmlab.xyz**
@@ -145,8 +173,15 @@ the whole 2 GB VPS stayed at ~450 MB available while building feeds.
 - **Thread cost.** Resolving roots costs a few fetches per reply, so a cold
   build of a chatty feed takes ~5 s; the 5-minute feed cache and a 6-hour hash
   cache bring warm builds to ~2 s.
-- **No write path.** Posting from twtxt.app would need a second, claimed
-  identity — the part that killed both previous attempts.
+- **Single user, single feed.** One identity (`@bridge@…`), one feed. Mirroring
+  arbitrary twtxt feeds into ActivityPub — the `yarnsocial/bridge` model, where
+  you keep hosting your `.txt` and the bridge polls it — is not implemented:
+  it needs a claim/verify flow, per-user actors and a poller.
+- **Replies from the fediverse are not stored.** The inbox handles `Follow` and
+  `Undo` only; a Mastodon reply to a bridge post is not rendered back into the
+  feed yet.
+- **No media.** `media: false`; avatar upload and `/media/{name}` are not
+  implemented, only an external avatar URL through `POST /api/profile`.
 - The bridge is an unauthenticated URL fetcher by design: hosts are normalised
   and IP literals/localhost are refused, but there is no allowlist or rate
   limiter yet. Don't run it on a host with network access you care about until
