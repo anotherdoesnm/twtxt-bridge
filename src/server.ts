@@ -11,6 +11,7 @@ import { publish } from "./publish.ts";
 import { receiveWebmention, sendWebmentions } from "./webmention.ts";
 import { addPost, getState, touchReader, update } from "./state.ts";
 import { parseUserAgent } from "./ua.ts";
+import { expandWhoFollows } from "./who-follows.ts";
 import { federation } from "./federation.ts";
 import { parseHandle } from "./webfinger.ts";
 
@@ -260,7 +261,14 @@ app.get("/twtxt.txt", async (c) => {
   // it is, since the request carries no identity otherwise.
   const reader = parseUserAgent(c.req.header("user-agent"));
   if (reader) {
-    void touchReader(reader).catch((err) => {
+    void (async () => {
+      if (reader.group) {
+        // Multi-user client: resolve the who-follows list into real readers,
+        // and keep the group entry only if it can't be read.
+        if (await expandWhoFollows(reader.url)) return;
+      }
+      await touchReader(reader);
+    })().catch((err) => {
       console.warn(`reader record failed: ${(err as Error).message}`);
     });
   }
