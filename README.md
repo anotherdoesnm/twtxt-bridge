@@ -77,6 +77,8 @@ docker exec twtxt-bridge cat /data/state.json   # .token
 | `GET /api/followers` | yes | who follows the actor |
 | `POST /api/post` | yes | append a twt and fan out `Create{Note}` |
 | `POST /api/profile` | yes | avatar url, description, links |
+| `GET /mentions.txt` | no | replies to bridge posts, as a twtxt feed |
+| `POST /webmention` | no | twtxt-flavoured webmention receiver |
 
 `POST /api/post` takes `{"text": "..."}`, stamps the time server-side, encodes
 newlines as U+2028 and returns `{"created": "..."}`. Delivery happens after the
@@ -84,6 +86,34 @@ response: a failing inbox must not make the client think the post was lost.
 
 Incoming `Follow` is accepted with a signed `Accept` and the follower's inbox is
 stored; `Undo{Follow}` removes it.
+
+## Replies and webmentions
+
+Answers to a bridge post arrive two ways and land in one place:
+`https://…/mentions.txt`, a twtxt feed where every reply is a twt with
+`(#parenthash)` in front, so a client threads it under the post it answers.
+
+**ActivityPub.** The inbox stores `Create` activities whose `inReplyTo` points
+at one of our notes. Note ids are the twt hash (`/notes/<hash>`), so the parent
+is derived from the id — no mapping table.
+
+**Webmentions.** The feed declares `# webmention = <base>/webmention`, and
+`POST /webmention` implements [Søren Peter Mørch's twtxt variant](https://darch.dk/mentions-twtxt):
+
+```sh
+curl -d 'source=https://alice.example/twtxt.txt#:~:text=2026-03-04T17:11:38Z' \
+     -d 'target=https://twtxt.doesnmlab.xyz/twtxt.txt#:~:text=2026-03-05T20:33:55Z' \
+     https://twtxt.doesnmlab.xyz/webmention
+```
+
+A twt is addressed by its timestamp through a text fragment, because a hash
+needs the author's feed url to verify and a timestamp does not. The endpoint
+fetches the source feed, checks that the claimed line really exists, and only
+then stores the mention. Hosts are subject to the same SSRF guard as the reader
+(`ALLOW_PRIVATE_FETCH=1` relaxes it for local testing only).
+
+**Not implemented:** sending webmentions outward when we mention someone. The
+mentions feed is public — there is no per-user auth on it.
 
 ## Endpoints
 
