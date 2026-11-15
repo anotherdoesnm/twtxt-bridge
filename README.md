@@ -112,8 +112,17 @@ fetches the source feed, checks that the claimed line really exists, and only
 then stores the mention. Hosts are subject to the same SSRF guard as the reader
 (`ALLOW_PRIVATE_FETCH=1` relaxes it for local testing only).
 
-**Not implemented:** sending webmentions outward when we mention someone. The
-mentions feed is public — there is no per-user auth on it.
+**Sending.** A twt that answers a specific twt (`(#hash)`) and mentions a feed
+(`@<nick url="…">`) triggers a webmention to that feed: the bridge fetches it,
+reads its `# webmention =` endpoint, finds which line the hash points at, and
+POSTs `source`/`target` with both timestamps as text fragments. The fetch is
+needed for the endpoint anyway, so it doubles as the hash → timestamp lookup
+that twtxt otherwise doesn't give you. Sending happens after the API response;
+failures are logged, never surfaced as a failed post.
+
+Two limits worth knowing: a plain mention without a subject sends nothing
+(there is no twt to address), and the mentions feed is public — replies are
+not secret.
 
 ## Endpoints
 
