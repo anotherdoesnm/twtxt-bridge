@@ -132,9 +132,12 @@ the whole 2 GB VPS stayed at ~450 MB available while building feeds.
   full history and no backfill.
 - **Boosts are skipped** (they need a second fetch per item).
 - **Threading is one level of fidelity.** A reply gets a `(#hash)` subject
-  pointing at the *root* of its conversation (Twt Hash v1: blake2b-256 over
-  `feed url \n timestamp \n text`, base32, last 7 chars), which is what lets a
-  client group a thread. The walk up `inReplyTo` is bounded to 4 hops, 24
+  pointing at the *root* of its conversation, which is what lets a client group
+  a thread. The hash follows the current spec: blake2b-256 over
+  `feed url \n timestamp \n text`, base32, then **last 7 characters for twts
+  before 2026-07-01T00:00:00Z (v1)** and **first 12 characters from that epoch
+  on (v2)** — chosen per twt timestamp, so posts on both sides of the epoch
+  stay compatible and historical twts are never re-hashed. The walk up `inReplyTo` is bounded to 4 hops, 24
   fetches and 7 s per feed build; if it can't reach a true root it emits **no**
   subject rather than a mid-thread hash, because a mid-thread twt renders with
   its own subject prefix and would hash differently. The fediverse still cannot
@@ -151,7 +154,10 @@ the whole 2 GB VPS stayed at ~450 MB available while building feeds.
 
 ## Next
 
-1. Add a `# follow =` list and a per-actor "timeline" feed for the bridge
+1. Write path: implement the twtd API (`/twtxt.txt`, `/api/info`, `/api/post`)
+   so twtxt.app can post through the bridge, with the actor delivering `Create`
+   to its followers and inbound replies landing back in the feed.
+2. Add a `# follow =` list and a per-actor "timeline" feed for the bridge
    actor's own following collection.
 3. Rate limit + allowlist before this is exposed to the open internet.
 
