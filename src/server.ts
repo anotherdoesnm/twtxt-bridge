@@ -9,7 +9,8 @@ import { acquire, checkRate, clientIp, release } from "./limits.ts";
 import { buildFeed } from "./feed.ts";
 import { publish } from "./publish.ts";
 import { receiveWebmention, sendWebmentions } from "./webmention.ts";
-import { addPost, getState, update } from "./state.ts";
+import { addPost, getState, touchReader, update } from "./state.ts";
+import { parseUserAgent } from "./ua.ts";
 import { federation } from "./federation.ts";
 import { parseHandle } from "./webfinger.ts";
 
@@ -254,13 +255,22 @@ async function ownFeed(): Promise<string> {
   return `${lines.join("\n")}\n`;
 }
 
-app.get("/twtxt.txt", async (c) =>
-  c.text(await ownFeed(), 200, {
+app.get("/twtxt.txt", async (c) => {
+  // Follower discovery by User-Agent: the only way a twtxt client can say who
+  // it is, since the request carries no identity otherwise.
+  const reader = parseUserAgent(c.req.header("user-agent"));
+  if (reader) {
+    void touchReader(reader).catch((err) => {
+      console.warn(`reader record failed: ${(err as Error).message}`);
+    });
+  }
+
+  return c.text(await ownFeed(), 200, {
     "content-type": "text/plain; charset=utf-8",
     "access-control-allow-origin": "*",
     "cache-control": "public, max-age=30",
-  }),
-);
+  });
+});
 
 app.get("/api/info", async (c) => {
   const state = await getState();
@@ -280,15 +290,26 @@ app.get("/api/info", async (c) => {
 app.get("/api/followers", async (c) => {
   if (!(await authorized(c))) return c.text("unauthorized\n", 401);
   const state = await getState();
-  return c.json(
-    state.followers.map((follower) => ({
-      nick: follower.actor.split("/").filter(Boolean).pop() ?? follower.actor,
-      url: follower.actor,
-      firstSeen: follower.since,
-      lastSeen: follower.since,
-      count: 1,
-    })),
-  );
+
+  const fediverse = state.followers.map((follower) => ({
+    nick: follower.actor.split("/").filter(Boolean).pop() ?? follower.actor,
+    url: follower.actor,
+    firstSeen: follower.since,
+    lastSeen: follower.since,
+    count: 1,
+    via: "activitypub" as const,
+  }));
+
+  const twtxt = state.readers.map((reader) => ({
+    nick: reader.nick,
+    url: reader.url,
+    firstSeen: reader.firstSeen,
+    lastSeen: reader.lastSeen,
+    count: reader.count,
+    via: "user-agent" as const,
+  }));
+
+  return c.json([...fediverse, ...twtxt]);
 });
 
 app.post("/api/post", async (c) => {

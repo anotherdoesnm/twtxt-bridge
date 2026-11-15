@@ -28,6 +28,15 @@ export interface Mention {
   source: "ap" | "webmention";
 }
 
+export interface Reader {
+  nick: string;
+  url: string;
+  group?: boolean;
+  firstSeen: string;
+  lastSeen: string;
+  count: number;
+}
+
 export interface State {
   token: string;
   nick: string;
@@ -37,6 +46,7 @@ export interface State {
   posts: Post[];
   followers: Follower[];
   mentions: Mention[];
+  readers: Reader[];
 }
 
 const FILE = join(DATA_DIR, "state.json");
@@ -53,6 +63,7 @@ async function load(): Promise<State> {
     state.followers ??= [];
     state.links ??= [];
     state.mentions ??= [];
+    state.readers ??= [];
     return state;
   } catch {
     // first run
@@ -67,6 +78,7 @@ async function load(): Promise<State> {
     posts: [],
     followers: [],
     mentions: [],
+    readers: [],
   };
   await persist();
   console.log(`created ${FILE}; API token: ${state.token}`);
@@ -101,6 +113,33 @@ export async function addPost(text: string, created: string): Promise<Post> {
     s.posts.push(post);
     if (s.posts.length > 5000) s.posts.splice(0, s.posts.length - 5000);
     return post;
+  });
+}
+
+/**
+ * Records a twtxt client that fetched the feed. Only writes when the reader is
+ * new or hasn't been seen for five minutes, so a polling client doesn't turn
+ * every GET into a disk write.
+ */
+export async function touchReader(reader: { nick: string; url: string; group?: boolean }): Promise<void> {
+  const now = Date.now();
+  const existing = (await load()).readers.find((r) => r.url === reader.url);
+  if (existing && now - Date.parse(existing.lastSeen) < 5 * 60_000) {
+    existing.count += 1;
+    return;
+  }
+
+  await update((s) => {
+    const found = s.readers.find((r) => r.url === reader.url);
+    const iso = new Date(now).toISOString();
+    if (found) {
+      found.count += 1;
+      found.lastSeen = iso;
+      found.nick = reader.nick;
+    } else {
+      s.readers.push({ ...reader, firstSeen: iso, lastSeen: iso, count: 1 });
+      if (s.readers.length > 500) s.readers.splice(0, s.readers.length - 500);
+    }
   });
 }
 
