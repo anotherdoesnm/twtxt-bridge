@@ -179,3 +179,37 @@ export function parseTwtxt(body: string): ParsedFeed {
 
   return { meta, posts };
 }
+
+/** `(#hash)` anywhere in the text: the twt this one answers. */
+export function parseSubject(text: string): string | null {
+  const match = /\(#([a-z2-7]{7,12})\)/.exec(text);
+  return match?.[1] ?? null;
+}
+
+/** `@<nick url="feed">` mentions. */
+export function parseMentions(text: string): Array<{ nick: string; url: string }> {
+  const out: Array<{ nick: string; url: string }> = [];
+  const re = /@<([^>\s]+)\s+url="([^"]+)">/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    if (match[1] && match[2]) out.push({ nick: match[1], url: match[2] });
+  }
+  return out;
+}
+
+/**
+ * Drops a leading subject and leading mentions from a reply body: the mentions
+ * feed re-adds both (the subject as `(#hash)`, the author as `@<nick url>`), so
+ * keeping them would double them up.
+ */
+export function stripLead(text: string): string {
+  let out = text.trim();
+  for (let i = 0; i < 4; i += 1) {
+    const next = out
+      .replace(/^\(#[a-z2-7]{7,12}\)\s*/, "")
+      .replace(/^@<[^>]+>\s*/, "");
+    if (next === out) break;
+    out = next;
+  }
+  return out.trim();
+}

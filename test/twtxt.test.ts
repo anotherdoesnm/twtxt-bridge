@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { htmlToTwtxt, noteToTwt, formatTwt, clip, decodeEntities } from "../src/twtxt.ts";
+import {
+  clip,
+  decodeEntities,
+  formatTwt,
+  htmlToTwtxt,
+  noteToTwt,
+  parseMentions,
+  parseSubject,
+  stripLead,
+} from "../src/twtxt.ts";
 import { parseHandle } from "../src/webfinger.ts";
 
 const SEP = "\u2028";
@@ -65,4 +74,27 @@ test("parseHandle rejects junk and bare hosts", () => {
   assert.throws(() => parseHandle("alice"));
   assert.throws(() => parseHandle("alice@localhost"));
   assert.throws(() => parseHandle("@alice@"));
+});
+
+test("parseSubject finds the v1 and v2 hashes", () => {
+  assert.equal(parseSubject("(#abcdefg) hi"), "abcdefg");
+  assert.equal(parseSubject("hi (#myzxbwxktuvs) there"), "myzxbwxktuvs");
+  assert.equal(parseSubject("no subject"), null);
+});
+
+test("parseMentions reads twtxt mention syntax", () => {
+  const text = '@<alice url="https://a.example/twtxt.txt"> and @<bob url="https://b.example/twtxt.txt"> hi';
+  assert.deepEqual(parseMentions(text), [
+    { nick: "alice", url: "https://a.example/twtxt.txt" },
+    { nick: "bob", url: "https://b.example/twtxt.txt" },
+  ]);
+  assert.deepEqual(parseMentions("plain"), []);
+});
+
+test("stripLead removes the subject and mentions the feed re-adds", () => {
+  assert.equal(
+    stripLead('(#abcdefg) @<alice url="https://a.example/twtxt.txt"> hello there'),
+    "hello there",
+  );
+  assert.equal(stripLead("just text"), "just text");
 });

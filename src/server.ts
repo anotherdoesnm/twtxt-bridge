@@ -8,7 +8,7 @@ import { cacheGet, cacheList, cacheSet, type CacheEntry } from "./cache.ts";
 import { acquire, checkRate, clientIp, release } from "./limits.ts";
 import { buildFeed } from "./feed.ts";
 import { publish } from "./publish.ts";
-import { receiveWebmention } from "./webmention.ts";
+import { receiveWebmention, sendWebmentions } from "./webmention.ts";
 import { addPost, getState, update } from "./state.ts";
 import { federation } from "./federation.ts";
 import { parseHandle } from "./webfinger.ts";
@@ -307,6 +307,14 @@ app.post("/api/post", async (c) => {
   void publish(text, created).catch((err) => {
     console.error(`publish failed: ${(err as Error).message}`);
   });
+
+  void sendWebmentions(text, created)
+    .then((sent) => {
+      if (sent) console.log(`webmentions sent: ${sent}`);
+    })
+    .catch((err) => {
+      console.error(`webmentions failed: ${(err as Error).message}`);
+    });
 
   return c.json({ created });
 });
