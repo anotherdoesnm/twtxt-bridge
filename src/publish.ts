@@ -26,6 +26,9 @@ export async function publish(text: string, created: string): Promise<number> {
 
   const ctx = federation.createContext(new URL(BASE_URL), undefined);
   const actorId = ctx.getActorUri(BRIDGE_ACTOR);
+  // Built by hand: the followers collection is a plain route, not a Fedify
+  // dispatcher, so ctx.getFollowersUri() would throw.
+  const followersUri = new URL(`${BASE_URL}/actor/${BRIDGE_ACTOR}/followers`);
   const id = new URL(`${BASE_URL}/notes/${randomUUID()}`);
 
   const note = new Note({
@@ -33,7 +36,7 @@ export async function publish(text: string, created: string): Promise<number> {
     content: textToHtml(text),
     mediaType: "text/html",
     to: new URL(AS_PUBLIC),
-    cc: ctx.getFollowersUri(BRIDGE_ACTOR),
+    cc: followersUri,
     attribution: actorId,
   });
 
@@ -42,7 +45,7 @@ export async function publish(text: string, created: string): Promise<number> {
     actor: actorId,
     object: note,
     to: new URL(AS_PUBLIC),
-    cc: ctx.getFollowersUri(BRIDGE_ACTOR),
+    cc: followersUri,
   });
 
   const recipients = state.followers.map((follower) => ({
@@ -51,6 +54,6 @@ export async function publish(text: string, created: string): Promise<number> {
   }));
 
   await ctx.sendActivity({ identifier: BRIDGE_ACTOR }, recipients, create);
-  void created;
+  console.log(`published ${created}: delivered to ${recipients.length} inbox(es)`);
   return recipients.length;
 }
