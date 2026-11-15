@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { federation as fedifyMiddleware } from "@fedify/hono";
 
 import { BASE_URL, CACHE_TTL_MS, PORT } from "./config.ts";
-import { cacheGet, cacheSet, type CacheEntry } from "./cache.ts";
+import { cacheGet, cacheList, cacheSet, type CacheEntry } from "./cache.ts";
 import { acquire, checkRate, clientIp, release } from "./limits.ts";
 import { buildFeed } from "./feed.ts";
 import { federation } from "./federation.ts";
@@ -145,6 +145,89 @@ app.get("/api/resolve", async (c) => {
   }
 });
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => {
+    const map: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+    return map[ch] ?? ch;
+  });
+}
+
+function postCount(text: string): number {
+  return text.split("\n").filter((line) => /^\d{4}-\d{2}-\d{2}T/.test(line)).length;
+}
+
+async function bridgedFeeds(limit = 200) {
+  const entries = await cacheList();
+  return entries
+    .sort((a, b) => b.fetchedAt - a.fetchedAt)
+    .slice(0, limit)
+    .map((entry) => ({
+      handle: entry.handle,
+      feed: `${BASE_URL}/@${entry.handle}/twtxt.txt`,
+      actor: entry.actorUrl,
+      posts: postCount(entry.text),
+      updatedAt: new Date(entry.fetchedAt).toISOString(),
+    }));
+}
+
+app.get("/api/feeds", async (c) => {
+  const feeds = await bridgedFeeds();
+  return c.json({ count: feeds.length, feeds });
+});
+
+app.get("/feeds", async (c) => {
+  const feeds = await bridgedFeeds();
+  const rows = feeds
+    .map(
+      (feed) => `<tr>
+      <td><a href="/@${escapeHtml(feed.handle)}/twtxt.txt">${escapeHtml(feed.handle)}</a></td>
+      <td class="num">${feed.posts}</td>
+      <td class="when">${escapeHtml(feed.updatedAt.slice(0, 16).replace("T", " "))}</td>
+    </tr>`,
+    )
+    .join("");
+
+  return c.html(`<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>bridged feeds</title>
+<style>
+  :root { color-scheme: dark }
+  body { margin: 0; padding: 3rem 1rem; display: grid; justify-items: center;
+         font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+         background: #0d1117; color: #c9d1d9 }
+  main { width: min(46rem, 96vw) }
+  h1 { font-size: 1.2rem; margin: 0 0 .25rem }
+  p.sub { color: #8b949e; margin: 0 0 1.5rem }
+  table { width: 100%; border-collapse: collapse }
+  th { text-align: left; font-weight: 500; color: #8b949e; padding: .4rem .5rem;
+       border-bottom: 1px solid #30363d }
+  td { padding: .45rem .5rem; border-bottom: 1px solid #21262d; vertical-align: top }
+  td.num { text-align: right; color: #8b949e }
+  td.when { color: #6e7681; white-space: nowrap }
+  a { color: #58a6ff; text-decoration: none }
+  a:hover { text-decoration: underline }
+  .empty { color: #6e7681; padding: 1rem 0 }
+  footer { margin-top: 1.5rem; color: #6e7681; font-size: .85rem }
+</style></head>
+<body><main>
+  <h1>Bridged feeds</h1>
+  <p class="sub">${feeds.length} fediverse actors currently served as twtxt.</p>
+  ${
+    feeds.length
+      ? `<table><thead><tr><th>feed</th><th class="num">posts</th><th>built</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<p class="empty">Nothing yet — paste a handle on the <a href="/">front page</a>.</p>`
+  }
+  <footer><a href="/">← new feed</a> · <a href="/api/feeds">json</a></footer>
+</main></body></html>`);
+});
+
 app.get("/healthz", (c) => c.text("ok\n"));
 
 const LANDING = `<!doctype html>
@@ -178,7 +261,7 @@ const LANDING = `<!doctype html>
     <button type="submit">Feed</button>
   </form>
   <div class="out" id="out"></div>
-  <footer>Subscribe to the URL in any twtxt client. Replies are not bridged (yet).</footer>
+  <footer>Subscribe to the URL in any twtxt client. <a href="/feeds">What is already bridged →</a></footer>
 </main>
 <script>
   const params = new URLSearchParams(location.search);
